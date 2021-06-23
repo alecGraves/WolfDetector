@@ -72,7 +72,6 @@ trainingSample[datum_, classExtractor_] := With[{
   ]];
 
 
-
 Clear[ComputeBestAnchors];
 ComputeBestAnchors[dataset_, nAnchor_] :=
     With[{allXYWH =

@@ -14,7 +14,6 @@
 
 (*
 
-
   ::Usage::
 
 WolfDetector is an object detection library for #WolfLang (Wolfram Language).
@@ -97,7 +96,7 @@ Next, we postprocess our prediction into useful output data:
 
     outputData = WolfDetectorOutput[prediction]
 
-Note, we can also specify threshold parameters to our output Non-max-suppression algorithm:
+Note we can also specify threshold parameters to our output Non-max-suppression algorithm:
 
     minObjectConfidence = 0.5;
     maxBoxOverlap = 0.1;
