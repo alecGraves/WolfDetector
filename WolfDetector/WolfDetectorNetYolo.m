@@ -121,7 +121,7 @@ Clear[BuildYoloOutput];
 BuildYoloOutput[inputSize_, nClasses_, anchors_] := NetGraph[<|
   "anchors" -> NetArrayLayer["Array" -> anchors],
   "grid" -> NetArrayLayer["Array" ->
-      (Table[{x, y}, {x, 1, inputSize/32}, {y, 1, inputSize/32}] - 1) / inputSize/32],
+      (Table[{x, y}, {x, 1, inputSize/32}, {y, 1, inputSize/32}] - 1) / (inputSize/32.0) ],
   "reshape" ->
       NetChain[{ReshapeLayer[{5, Automatic, inputSize/32, inputSize/32}], TransposeLayer[1 <-> 2]}],
   "breakout" -> FunctionLayer[Apply[Function[{anchorsIn, grid, conv}, Block[
@@ -137,12 +137,9 @@ BuildYoloOutput[inputSize_, nClasses_, anchors_] := NetGraph[<|
 
     Block[{
       boxesScaled =
-          Join[(( 0.32 * Tanh[boxes[[1 ;; 2]]] //
-              TransposeLayer[{2 <-> 3, 3 <-> 4}]) + (grid //
-              TransposeLayer[{1 <-> 3, 3 <-> 2}]) //
-              TransposeLayer[{4 <-> 2, 3 <-> 4}]),
-            (Transpose @ (4 * LogisticSigmoid[ boxes[[2 ;; 3]]]) *
-                anchorsIn // Transpose)]},
+          Join[((0.1*Tanh[boxes[[1 ;; 2]]] // TransposeLayer[{2 <-> 3, 3 <-> 4}]) +
+              (grid // TransposeLayer[{1 <-> 3, 3 <-> 2}]) // TransposeLayer[{4 <-> 2, 3 <-> 4}]),
+            (Transpose @ (4 * LogisticSigmoid[ boxes[[2 ;; 3]]]) * anchorsIn // Transpose)]},
       <|
         "boxes" -> boxesScaled,
         "confidences" -> confidences,
@@ -236,7 +233,7 @@ BuildYoloLoss[outputLayer_] := NetGraph[
     "boxLossUnmasked" -> NetMapThreadOperator[FunctionLayer[
       AggregationLayer[Total, 1][sl1Loss[][#predictedBoxes, #targetBoxes]]&
     ], <|"targetBoxes" -> 1|>],
-    "boxLossExpanded" -> FunctionLayer[#loss * #mask * 8 &],
+    "boxLossExpanded" -> FunctionLayer[#loss * #mask * 2 &],
     "LossBox" -> SummationLayer[],
     "classLossUnmasked" ->
 (*         This is CrossEntropy Loss. The simple method does not work:*)
@@ -259,15 +256,15 @@ BuildYoloLoss[outputLayer_] := NetGraph[
     {NetPort["breakout", "confidences"],
       "maxIouThreshold", "anyAssignedMask"} ->
         "confidenceLossExpanded" ->
-            "LossConfidence",
+            "LossConfidence"(* -> NetPort["confidence"]*),
 (*     Calculate loss for box predictions*)
     {NetPort["breakout", "boxes"], "targetBoxes"} -> "boxLossUnmasked",
     {"boxLossUnmasked", "assignedMask" } ->
-        "boxLossExpanded" -> "LossBox",
+        "boxLossExpanded" -> "LossBox"(* -> NetPort["box"]*),
 (*    Calculate loss for class predictions*)
     {NetPort["breakout", "classes"], "targetClasses"} -> "classLossUnmasked",
     {"classLossUnmasked", "assignedMask"} ->
-        "classLossMasked" -> "LossClass",
+        "classLossMasked" -> "LossClass"(* -> NetPort["class"]*),
     {"LossConfidence", "LossBox", "LossClass"} -> "Loss"
   },
   "Target" -> {"Varying", 4 + First[NetExtract[outputLayer, "classes"]] (*nClasses*)},
