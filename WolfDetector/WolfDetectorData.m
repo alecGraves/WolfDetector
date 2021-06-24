@@ -7,7 +7,7 @@
 (* :Date: 2021-06-23 *)
 
 (* :Package Version: 0.1 *)
-(* :Mathematica Version: 12.1 *)
+(* :Mathematica Version: 12.3 *)
 (* :Copyright: (c) 2021 Alec *)
 (* :Keywords: *)
 (* :Discussion: *)
@@ -15,8 +15,20 @@
 BeginPackage["WolfDetectorData`"];
 (* Exported symbols added here with SymbolName::usage *)
 
-Begin["`Private`"];
+GetClassExtractor::usage = "GetClassExtractor[dataset] gets a one-hot encoding function for your dataset.";
 
+ComputeBestAnchors::usage = "ComputeBestAnchors[dataset, n]: Computes optimal `n` bounding box anchors from a dataset";
+
+ToTrainingDataset::usage = "ToTrainingDataset[dataset, classExtractor] converts a dataset of rectangles \
+to a format that can be used for training.";
+
+DrawBoxesLabel::usage = "DrawBoxesLabel[img_, labels_] Draws label boxes onto an img given the image";
+
+ToLabel::usage = "ToLabel[outboxes_, outclasses_, classExtractor_] Takes network outputs outboxes and outclasses \
+and returns labeled boxes in the form {Rect[...] -> 'class', ...}";
+
+
+Begin["`Private`"];
 
 Clear[fromRectangle];
 fromRectangle[rect_] := {rect[[1]], rect[[2]]};
@@ -43,20 +55,31 @@ rectsToXYWH[rectangles_] := With[{
   ]];
 
 
-ClearAll[xywhToRects];
+Clear[xywhToRects];
 xywhToRects[xywh_] := Block[{xs, ys, ws, hs},
   {xs, ys, ws, hs} = Transpose[xywh];
-  Rectangle[{#[[1]], #[[2]]}, {#[[3]], #[[4]]}] & /@ (FunctionLayer[
-    Clip[#in, {0, 1}] &][{xs - ws/2, ys - hs/2, xs + ws/2, ys + hs/2}] // Transpose )
+  Rectangle[{#[[1]], #[[2]]}, {#[[3]], #[[4]]}] & /@ (
+    FunctionLayer[Clip[#in, {0, 1}] &][{xs - ws/2, ys - hs/2, xs + ws/2, ys + hs/2}] // Transpose
+  )
 ];
 
 
-ClearAll[getClassExtractor];
-getClassExtractor[
-  dataset_] := (Values /@ Values[dataset]) // Flatten //
+Clear[ToLabel];
+ToLabel[outboxes_, outclasses_, classExtractor_] := (#[[1]] -> #[[2]]) & /@
+    Transpose[{xywhToRects[outboxes], NetDecoder[classExtractor][outclasses]}];
+
+
+Clear[DrawBoxesLabel];
+DrawBoxesLabel[img_, labels_] := HighlightImage[
+  img,
+  Labeled[ #[[1]], #[[2]] ] & /@ Transpose[{scaleRectangles[Keys[labels], img], Values[labels]}]
+];
+
+
+Clear[GetClassExtractor];
+GetClassExtractor[dataset_] := (Values /@ Values[dataset]) // Flatten //
     DeleteDuplicates // Sort //
-    FeatureExtraction[#, "IndicatorVector",
-      FeatureTypes -> "Nominal"] &;
+    NetEncoder[{"Class", #, "UnitVector"}] &;
 
 
 Clear[trainingSample];
@@ -68,14 +91,17 @@ trainingSample[datum_, classExtractor_] := With[{
     rectangles = Keys[labels],
     classes = Values[labels]
   },
-    {img, Join[rectsToXYWH[rectangles], classExtractor[classes], 2] }
+    img -> Join[rectsToXYWH[rectangles], classExtractor[classes], 2]
   ]];
+
+
+Clear[ToTrainingDataset];
+ToTrainingDataset[dataset_, classExtractor_] := Map[trainingSample[#, classExtractor]&, dataset];
 
 
 Clear[ComputeBestAnchors];
 ComputeBestAnchors[dataset_, nAnchor_] :=
-    With[{allXYWH =
-        rectsToXYWH[dataset // Values // Keys // Flatten[#, 1] &]},
+    With[{allXYWH = rectsToXYWH[dataset // Values // Keys // Flatten[#, 1] &]},
       (* get the WH components*)
       With[{allWH = allXYWH[[All, 3 ;; 4]] },
         With[{clustered = FindClusters[allWH, nAnchor, Method -> "KMeans"]},
@@ -90,11 +116,12 @@ ComputeBestAnchors[dataset_, nAnchor_] :=
                 clusterLens = Length /@ clustered,
                 nMissing = nAnchor - Length[clustered]
               },
-                Join[means,
+                Join[
+                  means,
                   Table[
-                    Extract[ means,
-                      First @ Position[clusterLens, Max@clusterLens, {1}, 1] ],
-                    nMissing]
+                    Extract[ means, First @ Position[clusterLens, Max@clusterLens, {1}, 1] ],
+                    nMissing
+                  ]
                 ]
               ],
               means

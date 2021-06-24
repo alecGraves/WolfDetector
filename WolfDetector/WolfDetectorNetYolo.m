@@ -17,18 +17,20 @@
 BeginPackage["WolfDetectorNetYolo`"];
 (* Exported symbols added here with SymbolName::usage *)
 
-BuildYolo::usage = "Returns pre-trained YOLO for the specified square input image size \
-and a new head for the specified number of classes and anchors. \
+BuildYolo::usage = "BuildYolo[inputSize_, nClass_, nAnchor_] Returns pre-trained YOLO for the specified
+square input image size and a new head for the specified number of classes and anchors. \
 Image size must be divisible by 32, and the size / 32 must be odd (e.g. 416/32 = 13, 224/13 = 7)";
 
-BuildYoloOutput::usage = "Returns layer converting yolo convolutional output to 'boxes', 'confidences' and 'classes'";
+BuildYoloOutput::usage = "BuildYoloOutput[inputSize_, nClasses_, nAnchor_, anchors_] Returns layer \
+converting yolo convolutional output to 'boxes', 'confidences' and 'classes'";
 
-BuildYoloLoss::usage = "Returns YOLOv2 loss function NetGraph (assumes YOLO output is in the format of GetOutputGraph";
+BuildYoloLoss::usage = "BuildYoloLoss[outputLayer_] Returns YOLOv2 loss function NetGraph \
+(assumes YOLO output is in the format of GetOutputGraph";
 
 NonMaxSuppression::Usage = "Filters YOLO output, removing low-confidence and overlapping boxes using thresholds";
 
-Begin["`Private`"];
 
+Begin["`Private`"];
 
 Clear[makeInput];
 makeInput[inputSize_Integer] :=
@@ -113,47 +115,47 @@ BuildYolo[inputSize_, nClass_, nAnchor_] := NetChain[{
 }] // NetFlatten[#, 1] & // NetInitialize;
 
 
+
 Clear[BuildYoloOutput];
 (* Converts Yolo conv output to usable array data *)
-BuildYoloOutput[inputSize_, nClasses_, nAnchor_, gridLayer_, anchorLayer_] := NetGraph[<|
-  "grid" -> gridLayer,
-  "anchors" -> anchorLayer,
+BuildYoloOutput[inputSize_, nClasses_, anchors_] := NetGraph[<|
+  "anchors" -> NetArrayLayer["Array" -> anchors],
+  "grid" -> NetArrayLayer["Array" ->
+      (Table[{x, y}, {x, 1, inputSize/32}, {y, 1, inputSize/32}] - 1) / inputSize/32],
   "reshape" ->
-      NetChain[{ReshapeLayer[{5, Automatic, inputSize/32,
-        inputSize/32}], TransposeLayer[1 <-> 2]}],
-  "breakout" -> FunctionLayer[Apply[Function[{anchors, grid, conv}, Block[
+      NetChain[{ReshapeLayer[{5, Automatic, inputSize/32, inputSize/32}], TransposeLayer[1 <-> 2]}],
+  "breakout" -> FunctionLayer[Apply[Function[{anchorsIn, grid, conv}, Block[
     (* This is a really bad function because in 12.2, FunctionLayer was not compiling nice functions. *)
     (* ... *)
     (* We assume the net has been reshaped to dimensions n x Anchors x dim x dim.  *)
     {
       boxes = conv[[1 ;; 4]],
-      classes = conv[[6 ;;]],
+      classPredictions = conv[[6 ;;]],
       confidences = LogisticSigmoid[conv[[5]]]
     },
     (* We first need to construct our boxes to find the best fits. *)
 
     Block[{
       boxesScaled =
-          Join[(( 2.0 / 13.0 * Tanh[boxes[[1 ;; 2]]] //
+          Join[(( 0.32 * Tanh[boxes[[1 ;; 2]]] //
               TransposeLayer[{2 <-> 3, 3 <-> 4}]) + (grid //
               TransposeLayer[{1 <-> 3, 3 <-> 2}]) //
               TransposeLayer[{4 <-> 2, 3 <-> 4}]),
             (Transpose @ (4 * LogisticSigmoid[ boxes[[2 ;; 3]]]) *
-                anchors // Transpose)]},
+                anchorsIn // Transpose)]},
       <|
         "boxes" -> boxesScaled,
         "confidences" -> confidences,
-        "classes" -> classes
+        "classes" -> classPredictions
       |>
     ]]]]],
   "classSoftmax" -> SoftmaxLayer[1]
 |>,
   {
     {"anchors", "grid", NetPort["Input"] -> "reshape"} -> "breakout",
-    NetPort["breakout", "classes"] ->
-        "classSoftmax" ->  NetPort["classes"]
+    NetPort["breakout", "classes"] -> "classSoftmax" ->  NetPort["classes"]
   },
-  "Input" -> {(5 + nClasses)*nAnchor, inputSize/32, inputSize/32}
+  "Input" -> {(5 + nClasses)*Length[anchors], inputSize/32, inputSize/32}
 ];
 
 
@@ -212,19 +214,20 @@ GIOUGraph[] := NetGraph[
 
 Clear[BuildYoloLoss];
 (* Returns YOLO v2 - ish loss function *)
-BuildYoloLoss[] := NetGraph[
+BuildYoloLoss[outputLayer_] := NetGraph[
   <|
+    "breakout" -> outputLayer,
     "targetBoxes" -> PartLayer[{All, 1 ;; 4}],
     "targetClasses" -> PartLayer[{All, 5 ;;}],
     "iou" -> NetMapThreadOperator[GIOUGraph[], <|"label" -> 1|>] (* wow *),
     "maxes" -> AggregationLayer[Max, 2 ;;],
     "assignedMask" ->
         FunctionLayer[
-          If[#iou > 0.5 || Abs[#iou - #max] < 0.002 , 1., 0.] &],
+          If[#iou > 0.5 || (Abs[#iou - #max] < 0.002) , 1., 0.] &],
     "anyAssignedMask" -> AggregationLayer[Max, 1],
     "iouThreshold" ->
-    (* This is needed because NetTrain crashes without thresholding applied (in v12.3). *)
-        FunctionLayer[Floor[#iou*100.0]/100.0 &],
+(*     This is needed because NetTrain crashes without thresholding applied (in v12.3).*)
+        FunctionLayer[Floor[#iou*64.0]/64.0 &],
     "maxIouThreshold" -> AggregationLayer[Max, 1],
     "confidenceLossExpanded" ->
         FunctionLayer[
@@ -233,41 +236,42 @@ BuildYoloLoss[] := NetGraph[
     "boxLossUnmasked" -> NetMapThreadOperator[FunctionLayer[
       AggregationLayer[Total, 1][sl1Loss[][#predictedBoxes, #targetBoxes]]&
     ], <|"targetBoxes" -> 1|>],
-    "boxLossExpanded" -> FunctionLayer[#loss * #mask * 2 &],
+    "boxLossExpanded" -> FunctionLayer[#loss * #mask * 8 &],
     "LossBox" -> SummationLayer[],
-    "classSoftmax" -> SoftmaxLayer[1],
     "classLossUnmasked" ->
-        (* This is CrossEntropy Loss. The simple method does not work:
-    NetMapThreadOperator[CrossEntropyLossLayer["Probabilities"], <|"Target"\[Rule] 1|>]*)
+(*         This is CrossEntropy Loss. The simple method does not work:*)
+(*    NetMapThreadOperator[CrossEntropyLossLayer["Probabilities"], <|"Target"\[Rule] 1|>]*)
         NetMapThreadOperator[
           FunctionLayer[-Total[Log[#Input] * #Target] &], <|"Target" -> 1|>],
     "classLossMasked" -> FunctionLayer[#loss * Ramp[#iou ] * 2 &],
     "LossClass" -> SummationLayer[],
-    "Loss" ->  TotalLayer[]
+    "Loss" -> TotalLayer[]
   |>,
   {
-    (* Compute best matching IOUs *)
+(*     Compute best matching IOUs*)
+    NetPort["Input"] -> "breakout",
     NetPort["Target"] -> {"targetBoxes", "targetClasses"},
-    {NetPort["Input", "boxes"], "targetBoxes" } -> "iou" -> "maxes",
+    {NetPort["breakout", "boxes"], "targetBoxes" } -> "iou" -> "maxes",
     {"iou", "maxes"} -> "assignedMask",
-    (* Calculate loss for confidence *)
+(*     Calculate loss for confidence*)
     "assignedMask" -> "anyAssignedMask",
     "iou" -> "iouThreshold" -> "maxIouThreshold" ,
-    {NetPort["Input", "confidences"],
+    {NetPort["breakout", "confidences"],
       "maxIouThreshold", "anyAssignedMask"} ->
         "confidenceLossExpanded" ->
-            "LossConfidence" -> NetPort["LossConfidence"],
-    (* Calculate loss for box predictions *)
-    {NetPort["Input", "boxes"], "targetBoxes"} -> "boxLossUnmasked",
+            "LossConfidence",
+(*     Calculate loss for box predictions*)
+    {NetPort["breakout", "boxes"], "targetBoxes"} -> "boxLossUnmasked",
     {"boxLossUnmasked", "assignedMask" } ->
-        "boxLossExpanded" -> "LossBox" -> NetPort["LossBox"],
-    (*Calculate loss for class predictions *)
-    NetPort["Input", "classes"] -> "classSoftmax",
-    {"classSoftmax", "targetClasses"} -> "classLossUnmasked",
+        "boxLossExpanded" -> "LossBox",
+(*    Calculate loss for class predictions*)
+    {NetPort["breakout", "classes"], "targetClasses"} -> "classLossUnmasked",
     {"classLossUnmasked", "assignedMask"} ->
-        "classLossMasked" -> "LossClass" -> NetPort["LossClass"],
+        "classLossMasked" -> "LossClass",
     {"LossConfidence", "LossBox", "LossClass"} -> "Loss"
-  }
+  },
+  "Target" -> {"Varying", 4 + First[NetExtract[outputLayer, "classes"]] (*nClasses*)},
+  "Input" -> NetExtract[outputLayer, "Input"]
 ];
 
 Clear[calculateOverlap];
@@ -293,12 +297,12 @@ computeNonOverlapping[inConfThreshold_, boxPreds_,
   classPredsInteger_, iouThreshold_ : 0.5, selectedIdxs_ : {}] :=
     If[Length[inConfThreshold] > 0,
       If[Length[inConfThreshold ] > 1,
-        Block[{sameClass =
-            Cases[Rest[
-              inConfThreshold], _?(classPredsInteger[[#]] ==
-                classPredsInteger[[First[inConfThreshold]]] &)],
+        Block[{
+          sameClass = Cases[Rest[inConfThreshold],
+          _?(classPredsInteger[[#]] == classPredsInteger[[First[inConfThreshold]]] &)],
           overlaps,
-          toRemove},
+          toRemove
+        },
           toRemove = If[Length[sameClass] > 0,
             overlaps = calculateOverlap[ boxPreds[[First @ inConfThreshold]], Transpose @ boxPreds[[sameClass]] ];
             sameClass[[  Cases[Range[Length[sameClass]], _?(overlaps[[#]] > iouThreshold &)]  ]]
@@ -317,12 +321,8 @@ computeNonOverlapping[inConfThreshold_, boxPreds_,
 
 Clear[NonMaxSuppression];
 NonMaxSuppression[netOut_, confThreshold_ : 0.3, iouThreshold_ : 0.5, maxBoxes_ : 100] := Block[{
-  boxPreds =
-      netOut[["boxes"]] // Transpose[#, {4, 1, 2, 3}] & //
-          Flatten[#, 2] &,
-  classPreds =
-      netOut[["classes"]] // Transpose[#, {4, 1, 2, 3}] & //
-          Flatten[#, 2] &,
+  boxPreds = netOut[["boxes"]] // Transpose[#, {4, 1, 2, 3}] & // Flatten[#, 2] &,
+  classPreds = netOut[["classes"]] // Transpose[#, {4, 1, 2, 3}] & // Flatten[#, 2] &,
   confPreds = netOut[["confidences"]] // Flatten,
   classPredsInteger,
   sortedIdxs,
@@ -330,16 +330,10 @@ NonMaxSuppression[netOut_, confThreshold_ : 0.3, iouThreshold_ : 0.5, maxBoxes_ 
   nmsIdxs
 },
   classPredsInteger = Map[First@Ordering[#, -1] &, classPreds];
-  sortedIdxs =
-      Reverse[Ordering[
-        confPreds, - Min[Abs[maxBoxes], Length[confPreds]]]];
-  inConfThreshold =
-      Cases[sortedIdxs, _?(confPreds[[#]] >= confThreshold &)];
-  nmsIdxs =
-      computeNonOverlapping[inConfThreshold, boxPreds,
-        classPredsInteger, iouThreshold];
-  {boxPreds[[nmsIdxs]],(*classPreds[[nmsIdxs]],*)
-    classPredsInteger[[nmsIdxs]]}
+  sortedIdxs = Reverse[ Ordering[confPreds, - Min[Abs[maxBoxes], Length[confPreds]]] ];
+  inConfThreshold = Cases[sortedIdxs, _?(confPreds[[#]] >= confThreshold &)];
+  nmsIdxs = computeNonOverlapping[inConfThreshold, boxPreds, classPredsInteger, iouThreshold];
+  {boxPreds[[nmsIdxs]], classPreds[[nmsIdxs]]}
 ];
 
 End[]; (* `Private` *)
