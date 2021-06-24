@@ -8,7 +8,7 @@
 
 (* :Package Version: 0.1 *)
 (* :Mathematica Version: 12.3 *)
-(* :Copyright: (c) 2021 Alec *)
+(* :Copyright: (c) 2021 Alec Graves *)
 (* :Keywords: *)
 (* :Discussion: *)
 
