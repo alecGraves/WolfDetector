@@ -137,9 +137,9 @@ BuildYoloOutput[inputSize_, nClasses_, anchors_] := NetGraph[<|
 
     Block[{
       boxesScaled =
-          Join[((0.1*Tanh[boxes[[1 ;; 2]]] // TransposeLayer[{2 <-> 3, 3 <-> 4}]) +
+          Join[((1.0/(inputSize/32.0)*Tanh[boxes[[1 ;; 2]]] // TransposeLayer[{2 <-> 3, 3 <-> 4}]) +
               (grid // TransposeLayer[{1 <-> 3, 3 <-> 2}]) // TransposeLayer[{4 <-> 2, 3 <-> 4}]),
-            (Transpose @ (4 * LogisticSigmoid[ boxes[[2 ;; 3]]]) * anchorsIn // Transpose)]},
+            (Transpose @ (3*LogisticSigmoid[ boxes[[2 ;; 3]]]) * anchorsIn // Transpose)]},
       <|
         "boxes" -> boxesScaled,
         "confidences" -> confidences,
