@@ -2,7 +2,7 @@
 
 ## Easily train your computer to detect ANYTHING 🔎🖼🚀
 
-WolfDetector is an object detection library focusing on ease of use and accessibility. It is implemented in the Wolfram Language. The only thing you need to install to get started is [the Wolfram Engine](https://www.wolfram.com/engine/) (currently a 1GB download, cross-platform).
+WolfDetector is a visual object detection library focusing on ease of use and accessibility. It is implemented in the Wolfram Language. The only thing you need to install to get started is [the Wolfram Engine](https://www.wolfram.com/engine/) (currently a 1GB download, cross-platform).
 
 WolfDetector is based on the [YOLOv2 neural network architecture](https://arxiv.org/abs/1612.08242v1), and it uses a [pre-trained model](https://resources.wolframcloud.com/NeuralNetRepository/resources/YOLO-V2-Trained-on-MS-COCO-Data_1) to speed up training time and reduce the number of training examples you need for your dataset. Because of this, training can be done quickly with only a laptop CPU.
 
@@ -49,8 +49,8 @@ TODO
 - [ ] PyTorch
 
 #### Dataset Compatibility
+- [x] Pascal VOC style dataset ( 2021/06/29 )
 - [ ] MSCOCO style dataset
-- [ ] Pascal VOC style dataset
 - [ ] Darknet style dataset
 
 #### Bindings

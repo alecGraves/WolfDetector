@@ -139,15 +139,38 @@ filtering to remove overlapping and low-confidence predictions.";
 
 WolfDetectorVisualize::usage = "WolfDetectorVisualize[img_, labels_] returns a graphic with labels drawn on img";
 
+WolfDetectorLoadDataset::usage = "WolfDetectorLoadDataset[path_, format_] loads a dataset at `path` \
+with a specified `format`. ex: WolfDetectorLoadDataset[\"C:\\my_datasets\\dataset1\", \"voc\"]";
+
+WolfDetectorLoadDataset::fmtsupport = "No loader found for dataset format: `1`. \
+\"voc\" format is supported.";
+
 
 Begin["`Private`"];
 
 (* Import our utility packages*)
 Get["WolfDetectorData`"];
 Get["WolfDetectorNetYolo`"];
-
+Get["PascalVocLoader`"];
 
 (* Define our functions *)
+
+Clear[WolfDetectorLoadDataset];
+WolfDetectorLoadDataset[path_, format_] := With[{
+(*  Choose the loader to use based on the passed in string code. *)
+  loader = <|
+(*    Add new dataset loaders here. *)
+    "voc" -> LoadVoc
+  |>[ format ]
+},
+  If[MissingQ[loader],
+    (Message[WolfDetectorLoadDataset::fmtsupport, format]; $Failed),
+(*    else*)
+    loader[path]
+  ]
+];
+
+
 Clear[WolfDetectorDataInfo];
 WolfDetectorDataInfo[dataset_, nAnchors_:5] := <|
   "classExtractor" -> GetClassExtractor[dataset],

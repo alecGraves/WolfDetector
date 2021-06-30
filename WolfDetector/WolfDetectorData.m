@@ -30,15 +30,22 @@ and returns labeled boxes in the form {Rect[...] -> 'class', ...}";
 
 Begin["`Private`"];
 
+(* convert Rect[{xmin, ymin}, {xmax, ymax}] to {{xmin, ymin}, {xmax, ymax}} *)
 Clear[fromRectangle];
 fromRectangle[rect_] := {rect[[1]], rect[[2]]};
 
-
+(* Scale WolfDetector format Rectangle boxes to image boxes. *)
 Clear[scaleRectangles];
 scaleRectangles[rects_, img_] := (fromRectangle /@ rects) //
     Transpose[#, {3, 2, 1}] & //
+(*        Transpose to 2*2*n, where first dim is x, y, second is min, max, third is number of boxes   *)
+    With[{}, Print[Dimensions[#]]; #]& //
+(*        Invert y-coordinate for y-down image frame.    *)
+    {#[[1]], 1-#[[2]]} & //
+(*        Scale the images   *)
     # * ImageDimensions[img] & //
     Transpose[#, {3, 2, 1}] & //
+(*        Convert back to rectangles   *)
     Apply[Rectangle, #] & /@ # &;
 
 
@@ -75,6 +82,7 @@ DrawBoxesLabel[img_, labels_] := HighlightImage[
   Labeled[ #[[1]], #[[2]] ] & /@ Transpose[{scaleRectangles[Keys[labels], img], Values[labels]}]
 ];
 
+DrawBoxesLabel[imgFilename_String, labels_] := With[{img=Import[imgFilename]}, DrawBoxesLabel[img, labels]];
 
 Clear[GetClassExtractor];
 GetClassExtractor[dataset_] := (Values /@ Values[dataset]) // Flatten //
@@ -84,7 +92,7 @@ GetClassExtractor[dataset_] := (Values /@ Values[dataset]) // Flatten //
 
 Clear[trainingSample];
 trainingSample[datum_, classExtractor_] := With[{
-  img = Keys[datum],
+  img = Keys[datum] /. x_String -> File[x],
   labels = Values[datum]
 },
   With[{
