@@ -51,7 +51,7 @@ extractBoxesVoc[xml_] := With[{
   (*    Check size makes sense  *)
   If[ width == 0 || height == 0,
     (*      return empty list*)
-    {},
+    filename -> Missing["InvalidAnnotation"],
     (*      else return: image filename -> (WolfDetector box -> class) *)
     filename -> Map[
       ( Rectangle[#[[1;;2]], #[[3;;4]]] -> #[[5]] & ),
@@ -73,7 +73,7 @@ LoadVoc[path_] := With[{
   imgFiles = FileNames[{"*.jpg", "*.jpeg", "*.png", "*.tiff"}, path, Infinity, IgnoreCase->True]
 },
   With[{imageNameToBoxes = Apply[Association, ParallelMap[extractBoxesVocFile, xmlFiles]]},
-    Map[# -> imageNameToBoxes[[ FileNameTake[#] ]]&, imgFiles] // DeleteCases[_->_?MissingQ]
+    Map[# -> imageNameToBoxes[[ FileNameTake[#] ]]&, imgFiles] // DeleteCases[_->_Missing]
   ]
 ];
 
