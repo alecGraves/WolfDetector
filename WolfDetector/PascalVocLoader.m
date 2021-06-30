@@ -24,6 +24,7 @@ Begin["`Private`"];
 Clear[findElements];
 findElements[data_, key_String] := Cases[data, XMLElement[key, _, _], Infinity];
 
+
 (* Convert list of {XMLElement[key1, _, value1], ...} to {value1, ...}  *)
 Clear[extractValues];
 extractValues[xmlElements_] := Map[
@@ -32,9 +33,11 @@ extractValues[xmlElements_] := Map[
   ReplaceAll[xmlElements, XMLElement[_, _, value_] -> value]
 ];
 
+
 (* Extract list of numeric, string, etc. data from keys within an XMLObject *)
 Clear[fromXML];
 fromXML[xml_, key_] := findElements[xml, key] // extractValues;
+
 
 (* convert XMLObject from Voc annotation to WolfDetector box format *)
 Clear[extractBoxesVoc];
@@ -60,13 +63,14 @@ extractBoxesVoc[xml_] := With[{
   ]
 ];
 
+
 Clear[extractBoxesVocFile];
 extractBoxesVocFile[xmlPath_] := If[FileExistsQ[xmlPath],
   With[{data=Import[xmlPath, "XML",	"AllowRemoteDTDAccess"->False, "ReadDTD" -> False]}, extractBoxesVoc[data]],
   Missing["NotAvailable"]
 ];
 
-Needs["GeneralUtilities`"];
+
 Clear[LoadVoc];
 LoadVoc[path_] := With[{
   xmlFiles = FileNames["*.xml", path, Infinity, IgnoreCase->True],
