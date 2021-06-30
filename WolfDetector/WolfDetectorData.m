@@ -39,7 +39,6 @@ Clear[scaleRectangles];
 scaleRectangles[rects_, img_] := (fromRectangle /@ rects) //
     Transpose[#, {3, 2, 1}] & //
 (*        Transpose to 2*2*n, where first dim is x, y, second is min, max, third is number of boxes   *)
-    With[{}, Print[Dimensions[#]]; #]& //
 (*        Invert y-coordinate for y-down image frame.    *)
     {#[[1]], 1-#[[2]]} & //
 (*        Scale the images   *)
