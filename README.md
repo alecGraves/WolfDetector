@@ -35,6 +35,15 @@ TODO
 ### wolframscript (command line)
 TODO
 
+
+## Example Output
+### [Fruit Images for Object Detection (Kaggle)](https://www.kaggle.com/mbkinaci/fruit-images-for-object-detection)
+![Fruit](Images/fruit.png)
+
+### [Microcontroller Detection (Kaggle)](https://www.kaggle.com/tannergi/microcontroller-detection)
+![MicroController](Images/microcontroller.png)
+
+
 ## Development Status
 
 #### Code Distribution
@@ -55,8 +64,7 @@ TODO
 
 #### Bindings
 - [ ] Python Bindings
-- [ ] Batch script support
-- [ ] Bash script support
+- [ ] Scripts (Wolframscript)
 - [ ] Java Bindings
 - [ ] C# Bindings
 - [ ] C Bindings
