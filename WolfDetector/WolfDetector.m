@@ -26,19 +26,19 @@ To use it, you must first have the dataset you want to train on:
 
 ```
 myDataset = {
-<img> -> { Rectangle[{x_min, y_min}, {x_max, y_max}] -> "Class1", ...},
+<img> -> { Rectangle[{x_min_frac, y_min_frac}, {x_max_frac, y_max_frac}] -> "Class1", ...},
   ...
 };
 ```
 
 where:
-x_min is the smallest x value for a bounding box
-y_min is the smallest y value for a bounding box
-x_max is the largest x value for a bounding box
-y_max is the largest y value for a bounding box
+x_min_frac is the smallest x fraction for a bounding box
+y_min_frac is the smallest y fraction for a bounding box
+x_max_frac is the largest x fraction for a bounding box
+y_max_frac is the largest y fraction for a bounding box
 
-Note: x_min and x_max are encoded as fractions of the image width (0.0 to 1.0, where 0.0 is the left),
-and y_min and y_max are encoded as fractions of the image height (0.0 to 1.0, where 0.0 is the top).
+Note: x_min_frac and x_max_frac are encoded as fractions of the image width (0.0 to 1.0, where 0.0 is the left),
+and y_min_frac and y_max_frac are encoded as fractions of the image height (0.0 to 1.0, where 0.0 is the top).
 
 
 To train, we first have to get critical information about our data (the number of classes and anchors to use).
@@ -126,7 +126,9 @@ WolfDetectorDataInfo::usage = "WolfDetectorDataInfo[dataset_, nAnchors_:5] compu
 about the data that is used to make predictions.";
 
 BuildWolfDetector::usage = "BuildWolfDetector[dataInfo_, imageSize_:416] returns a neural network graph \
-for object detection.";
+for object detection. `imageSize` must be divisible by 32!";
+BuildWolfDetector::imsize = "Error: the requested input image size, `1`, is invalid. \
+imageSize must be evenly divisible by 32 AND >= 32";
 
 WolfDetectorTrainingDataset::usage = "WolfDetectorTrainingDataset[dataset_, dataInfo_] converts a correctly formatted \
 dataset into the format used by the WolfDetectorLossFunction.";
@@ -141,7 +143,6 @@ WolfDetectorVisualize::usage = "WolfDetectorVisualize[img_, labels_] returns a g
 
 WolfDetectorLoadDataset::usage = "WolfDetectorLoadDataset[path_, format_] loads a dataset at `path` \
 with a specified `format`. ex: WolfDetectorLoadDataset[\"C:\\my_datasets\\dataset1\", \"voc\"]";
-
 WolfDetectorLoadDataset::fmtsupport = "No loader found for dataset format: `1`. \
 \"voc\" format is supported.";
 
@@ -179,17 +180,22 @@ WolfDetectorDataInfo[dataset_, nAnchors_:5] := <|
 
 
 Clear[BuildWolfDetector];
-BuildWolfDetector[dataInfo_, imageSize_:416] := With[{
-    anchors = dataInfo["anchors"],
-    nAnchors = dataInfo["anchors"] // Length,
-    nClasses = dataInfo["classExtractor"][["Labels"]] // Length
-  },
+BuildWolfDetector[dataInfo_, imageSize_:416] := If[imageSize >= 32 && Mod[imageSize, 32]==0,
+With[{
+  anchors = dataInfo["anchors"],
+  nAnchors = dataInfo["anchors"] // Length,
+  nClasses = dataInfo["classExtractor"][["Labels"]] // Length
+},
   With[{
     yolo = BuildYolo[imageSize, nClasses, nAnchors],
     yoloOut = BuildYoloOutput[imageSize, nClasses, anchors]
   },
     {yolo, yoloOut}
-  ]];
+  ]],
+(*  else  *)
+  Message[BuildWolfDetector::imsize, imageSize];
+  $Failed
+];
 
 
 Clear[WolfDetectorTrainingDataset];

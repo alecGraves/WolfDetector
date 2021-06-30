@@ -35,7 +35,7 @@ Begin["`Private`"];
 Clear[makeInput];
 makeInput[inputSize_Integer] :=
     NetEncoder[{"Image", inputSize}] /;
-        Divisible[inputSize, 32] && OddQ[inputSize/32];
+        Divisible[inputSize, 32](* && OddQ[inputSize/32]*);
 
 
 Clear[makeReshape];
@@ -66,7 +66,7 @@ Note the size must be divisble by 32 and the input/32 must be odd \
 (the output should be odd for optimal performance)
 *)
 toplessYOLO[inputSize_Integer : 416] /;
-    Divisible[inputSize, 32] && OddQ[inputSize/32] := With[{
+    Divisible[inputSize, 32] (* && OddQ[inputSize/32]*) := With[{
   conv =
       NetExtract[NetModel["YOLO V2 Trained on MS-COCO Data"], "Conv"]
 },
