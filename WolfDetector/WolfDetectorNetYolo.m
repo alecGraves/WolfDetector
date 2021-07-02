@@ -164,6 +164,14 @@ sl1Loss[] := FunctionLayer[Apply[
       0.5 * diff^2,
       diff - 0.5]] &]];
 
+(* multiply with smooth gradient *)
+ClearAll[gmul, gmulF, gmulLayer, gmulAggregateXY];
+gmul = (#x + 1) (#y + 1) - (#x + #y) - 1 &;
+gmulF[x_, y_] := (x + 1) (y + 1) - (x + y) - 1;
+gmulLayer = FunctionLayer[Apply[gmul]];
+gmulAggregateXY[] := FunctionLayer[
+  gmulF[PartLayer[1][#in], PartLayer[2][#in]]&
+];
 
 Clear[GIOUGraph];
 (* Generalized Intersection Over Union (https://giou.stanford.edu) *)
@@ -186,15 +194,14 @@ GIOUGraph[] := NetGraph[
           Apply[ Ramp[
             ThreadingLayer[Min, 2][#axymax, #bxymax] -
                 ThreadingLayer[Max, 2][ #axymin, #bxymin]] &]],
-    "n" -> AggregationLayer[Times, 1],
+    "n" -> gmulAggregateXY[],
     "nc" -> FunctionLayer[
       Apply[ThreadingLayer[Max, 2][ #axymax, #bxymax] -
           ThreadingLayer[Min, 2][#axymin, #bxymin] &]],
-    "ac" -> AggregationLayer[Times, 1],
-    "u" ->
-        FunctionLayer[
-          Apply[AggregationLayer[Times, 1][#awh] +
-              AggregationLayer[Times, 1][#bwh] - #n &]],
+    "ac" -> gmulAggregateXY[],
+    "awhp" -> gmulAggregateXY[],
+    "bwhp" -> gmulAggregateXY[],
+    "u" -> FunctionLayer[Apply[#awhp + #bwhp - #n &]],
     "iou" -> FunctionLayer[Apply[#n / #u - (#ac - #u) / #ac &]]
   |>,
   {NetPort["boxes"] -> {"awh", "axyc"},
@@ -204,7 +211,7 @@ GIOUGraph[] := NetGraph[
     {"axymax", "bxymax", "axymin", "bxymin"} -> {"nwh", "nc"},
     {"nwh"} -> "n",
     {"nc"} -> "ac",
-    {"awh", "bwh", "n"} -> "u",
+    {"awh"-> "awhp", "bwh"-> "bwhp", "n"} -> "u",
     {"n", "u", "ac"} -> "iou" -> NetPort["iou"]}
 ];
 
@@ -228,19 +235,19 @@ BuildYoloLoss[outputLayer_] := NetGraph[
     "maxIouThreshold" -> AggregationLayer[Max, 1],
     "confidenceLossExpanded" ->
         FunctionLayer[
-          Apply[(#confidence - Ramp[#iou])^2 * (0.1 + 2 * #anyAssigned) &]],
+          Apply[gmulF[(#confidence - Ramp[#iou])^2, (0.1 + 2 * #anyAssigned)] &]],
     "LossConfidence" -> SummationLayer[],
     "boxLossUnmasked" -> NetMapThreadOperator[FunctionLayer[
       AggregationLayer[Total, 1][sl1Loss[][#predictedBoxes, #targetBoxes]]&
     ], <|"targetBoxes" -> 1|>],
-    "boxLossExpanded" -> FunctionLayer[#loss * #mask * 2 &],
+    "boxLossExpanded" -> FunctionLayer[#loss * #mask * 4 &],
     "LossBox" -> SummationLayer[],
     "classLossUnmasked" ->
 (*         This is CrossEntropy Loss. The simple method does not work:*)
 (*    NetMapThreadOperator[CrossEntropyLossLayer["Probabilities"], <|"Target"\[Rule] 1|>]*)
         NetMapThreadOperator[
-          FunctionLayer[-Total[Log[#Input] * #Target] &], <|"Target" -> 1|>],
-    "classLossMasked" -> FunctionLayer[#loss * Ramp[#iou ] * 2 &],
+          FunctionLayer[Total[Abs[#Input - #Target]^2*0.5] &], <|"Target" -> 1|>],
+    "classLossMasked" -> FunctionLayer[#loss * #assigned * 2 &],
     "LossClass" -> SummationLayer[],
     "Loss" -> TotalLayer[]
   |>,
@@ -265,7 +272,8 @@ BuildYoloLoss[outputLayer_] := NetGraph[
     {NetPort["breakout", "classes"], "targetClasses"} -> "classLossUnmasked",
     {"classLossUnmasked", "assignedMask"} ->
         "classLossMasked" -> "LossClass"(* -> NetPort["class"]*),
-    {"LossConfidence", "LossBox", "LossClass"} -> "Loss"
+    { "LossClass","LossConfidence", "LossBox"} -> "Loss"(*,
+    { "LossClass", "LossConfidence", "LossBox"} -> None*)
   },
   "Target" -> {"Varying", 4 + First[NetExtract[outputLayer, "classes"]] (*nClasses*)},
   "Input" -> NetExtract[outputLayer, "Input"]
