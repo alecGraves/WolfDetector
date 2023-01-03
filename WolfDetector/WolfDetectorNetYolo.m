@@ -1,3 +1,5 @@
+(* ::Package:: *)
+
 (* Mathematica Package *)
 (* Created by the Wolfram Language Plugin for IntelliJ, see http://wlplugin.halirutan.de/ *)
 
@@ -124,9 +126,7 @@ BuildYoloOutput[inputSize_, nClasses_, anchors_] := NetGraph[<|
       (Table[{x, y}, {x, 1, inputSize/32}, {y, 1, inputSize/32}] - 1) / (inputSize/32.0) ],
   "reshape" ->
       NetChain[{ReshapeLayer[{5, Automatic, inputSize/32, inputSize/32}], TransposeLayer[1 <-> 2]}],
-  "breakout" -> FunctionLayer[Apply[Function[{anchorsIn, grid, conv}, Block[
-    (* This is a really bad function because in 12.2, FunctionLayer was not compiling nice functions. *)
-    (* ... *)
+  "breakout" -> FunctionLayer[Apply[Function[{anchorsIn, grid, conv}, Module[
     (* We assume the net has been reshaped to dimensions n x Anchors x dim x dim.  *)
     {
       boxes = conv[[1 ;; 4]],
@@ -134,18 +134,14 @@ BuildYoloOutput[inputSize_, nClasses_, anchors_] := NetGraph[<|
       confidences = LogisticSigmoid[conv[[5]]]
     },
     (* We first need to construct our boxes to find the best fits. *)
-
-    Block[{
-      boxesScaled =
-          Join[((1.0/(inputSize/32.0)*Tanh[boxes[[1 ;; 2]]] // TransposeLayer[{2 <-> 3, 3 <-> 4}]) +
-              (grid // TransposeLayer[{1 <-> 3, 3 <-> 2}]) // TransposeLayer[{4 <-> 2, 3 <-> 4}]),
-            (Transpose @ (5*LogisticSigmoid[ boxes[[2 ;; 3]]]) * anchorsIn // Transpose)]},
       <|
-        "boxes" -> boxesScaled,
+        "boxes" -> Join[((1.0/(inputSize/32.0)*Tanh[boxes[[1 ;; 2]]] // TransposeLayer[{2 <-> 3, 3 <-> 4}]) +
+              (grid // TransposeLayer[{1 <-> 3, 3 <-> 2}]) // TransposeLayer[{4 <-> 2, 3 <-> 4}]),
+            (Transpose @ (5*LogisticSigmoid[ boxes[[2 ;; 3]]]) * anchorsIn // Transpose)],
         "confidences" -> confidences,
         "classes" -> classPredictions
       |>
-    ]]]]],
+    ]]]],
   "classSoftmax" -> SoftmaxLayer[1]
 |>,
   {
@@ -184,12 +180,12 @@ GIOUGraph[] := NetGraph[
     "nwh" ->
         FunctionLayer[
           Apply[ Ramp[
-            ThreadingLayer[Min, 2][#axymax, #bxymax] -
-                ThreadingLayer[Max, 2][#axymin, #bxymin]] &]],
+            ThreadingLayer[Min, 2][{#axymax, #bxymax}] -
+                ThreadingLayer[Max, 2][{#axymin, #bxymin}]] &]],
     "n" -> AggregationLayer[Times, 1],
     "nc" -> FunctionLayer[
-      Apply[ThreadingLayer[Max, 2][#axymax, #bxymax] -
-          ThreadingLayer[Min, 2][#axymin, #bxymin] &]],
+      Apply[ThreadingLayer[Max, 2][{#axymax, #bxymax}] -
+          ThreadingLayer[Min, 2][{#axymin, #bxymin}] &]],
     "ac" -> AggregationLayer[Times, 1],
     "awhp" -> AggregationLayer[Times, 1],
     "bwhp" -> AggregationLayer[Times, 1],
@@ -230,13 +226,13 @@ BuildYoloLoss[outputLayer_] := NetGraph[
           Apply[(#confidence-Ramp[#iou])^2 * (1.0/20.0 + 4 * #anyAssigned) &]],
     "LossConfidence" -> SummationLayer[],
     "boxLossUnmasked" -> NetMapThreadOperator[FunctionLayer[
-      AggregationLayer[Total, 1][sl1Loss[][#predictedBoxes, #targetBoxes]]&
+      AggregationLayer[Total, 1][sl1Loss[][{#predictedBoxes, #targetBoxes}]]&
     ], <|"targetBoxes" -> 1|>],
     "boxLossExpanded" -> FunctionLayer[#loss * #mask * 4 &],
     "LossBox" -> SummationLayer[],
     "classLossUnmasked" ->
         NetMapThreadOperator[
-          FunctionLayer[Total[sl1Loss[][#Input, #Target]] &], <|"Target" -> 1|>],
+          FunctionLayer[Total[sl1Loss[][{#Input, #Target}]] &], <|"Target" -> 1|>],
     "classLossMasked" -> FunctionLayer[#loss * Ramp[#iou] * 2 &],
     "LossClass" -> SummationLayer[],
     "Loss" -> TotalLayer[]
@@ -334,3 +330,6 @@ NonMaxSuppression[netOut_, confThreshold_ : 0.3, iouThreshold_ : 0.5, maxBoxes_ 
 End[]; (* `Private` *)
 
 EndPackage[]
+
+
+
